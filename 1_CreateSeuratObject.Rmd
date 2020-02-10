@@ -1,0 +1,67 @@
+---
+title: "Creat Seurat object"
+output: html_notebook
+---
+
+Loading library
+```{r}
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+```
+
+Define functions
+```{r}
+#filter data and creat seurat object
+preprocess_data<- function(sample,rawdatafolder)
+{
+  rawdata<- Read10X(data.dir = rawdatafolder)
+  colnames(rawdata) <- paste(colnames(rawdata),sample,sep="")
+  rownames(rawdata) <-  id2symbol$symbol
+  data.du <- CreateSeuratObject(counts = rawdata, min.cells = 0, min.features = 0, project = sample)
+  percent.mito <- Matrix::colSums(data.du@assays$RNA@counts[mito_gene, ])/Matrix::colSums(data.du@assays$RNA@counts)
+  data.du <- AddMetaData(object = data.du, metadata = percent.mito, col.name = "percent.mito")
+  data.du@meta.data$sample <- sample
+
+nUMI_high <<- quantile(data.du@meta.data$nCount_RNA,0.99)
+  data.du <- subset(data.du,  subset= nCount_RNA >= 400)
+  data.du <- subset(data.du, subset= nCount_RNA < nUMI_high)
+  data.du <- subset(data.du, subset= percent.mito <  0.002)
+  data.sm <- NormalizeData(data.du,verbose = FALSE)
+  data.sm <- ScaleData(data.sm, display.progress = F)
+  # data.sm <- ScaleData(data.sm, display.progress = F, vars.to.regress="nUMI")
+  data.sm <- FindVariableFeatures(data.sm,selection.method = "mvp", nfeatures = 1000, verbose = FALSE)
+  print(dim(data.sm@meta.data))
+  return(data.sm)
+}
+```
+Load gene names
+```{r}
+  id2symbol <- read.table("data/id2symbol.txt",header=T,sep="\t",quote="\"", stringsAsFactors=F)
+#Seurat V3 symbol replace "_" with "-2"
+  id2symbol$symbol <- gsub(pattern = "_", replacement = "-", x = id2symbol$symbol)
+  mito_gene <- paste("Xe_0",23787:23800,sep="")
+  mito_gene <- id2symbol[id2symbol$ID %in% mito_gene,]$symbol
+```
+Create Seurat object for each sample
+```{r}
+stalk <- preprocess_data("stalk","data/MH3_stalk/")
+tentacle <- preprocess_data("tentacle","data/MH4_tentacle/")
+reg4d <- preprocess_data("reg4d","data/MH5_reg4d/")
+whole <- preprocess_data("whole","data/MH6_whole/")
+reg4d_v3 <- preprocess_data("reg4d_v3","data/MH10_reg4d_v3/")
+whole_v3 <- preprocess_data("whole_v3","data/MH11_whole_v3/")
+
+saveRDS(stalk,"data/stalk.RDS")
+saveRDS(tentacle,"data/tentacle.RDS")
+saveRDS(reg4d,"data/reg4d.RDS")
+saveRDS(whole,"data/whole.RDS")
+saveRDS(reg4d_v3,"data/reg4d_v3.RDS")
+saveRDS(whole_v3,"data/whole_v3.RDS")
+```
+
+SessionInfo
+```{r}
+sessionInfo()
+```
+

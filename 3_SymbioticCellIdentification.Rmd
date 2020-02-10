@@ -1,0 +1,105 @@
+---
+title: "Symbiotic cell identification"
+output: html_notebook
+---
+
+Loading library
+```{r}
+library(Seurat)
+library(tidyverse)
+library(ggplot2)
+library("ggsci")
+library(pheatmap)
+library(RColorBrewer)
+```
+
+Load gene names
+```{r}
+  id2symbol <- read.table("data/id2symbol.txt",header=T,sep="\t",quote="\"", stringsAsFactors=F)
+#Seurat V3 symbol replace "_" with "-2"
+  id2symbol$symbol <- gsub(pattern = "_", replacement = "-", x = id2symbol$symbol)
+  mito_gene <- paste("Xe_0",23787:23800,sep="")
+  mito_gene <- id2symbol[id2symbol$ID %in% mito_gene,]$symbol
+```
+
+Load non_regeneration Seurat object
+```{r}
+xenia <- readRDS("data/non_regeneration_integrated.RDS")
+```
+Identify symbiotic cells
+```{r}
+sym_facs<-read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/FACS_transcriptome/algae_containing_rep1.txt",header=T,sep="\t")
+sym_facs <- sym_facs[,c(1,7)]
+non_sym_facs<-read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/FACS_transcriptome/algae_free_rep1.txt",header=T,sep="\t")
+non_sym_facs <- non_sym_facs[,c(1,7)]
+facs_combind <- left_join(sym_facs,non_sym_facs,by=("gene_id"))
+colnames(facs_combind) <- c("geneID","symbiotic","non_symbiotic")
+sym_facs_2<-read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/FACS_transcriptome/algae_containing_rep2.txt",header=T,sep="\t")
+sym_facs_2 <- sym_facs_2[,c(1,7)]
+non_sym_facs_2<-read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/FACS_transcriptome/algae_free_rep2.txt",header=T,sep="\t")
+non_sym_facs_2 <- non_sym_facs_2[,c(1,7)]
+facs_combind <- left_join(facs_combind,sym_facs_2,by=c("geneID"="gene_id"))
+facs_combind <- left_join(facs_combind,non_sym_facs_2,by=c("geneID"="gene_id"))
+colnames(facs_combind) <- c("geneID","algae_containing_rep1","algae_free_rep1","algae_containing_rep2","algae_free_rep2")
+facs_combind <- facs_combind[,c(1,2,4,3,5)]
+facs_combind <- left_join(facs_combind,id2symbol,by=c("geneID"="ID"))
+
+#avgexpression of each gene in each cluster
+avgexpression <- AverageExpression(xenia,use.raw = T)
+#take the most variable gene for correlation analysis
+genes.use <- vector()
+combined.list<- list(readRDS("data/stalk.RDS"),readRDS("data/tentacle.RDS"),readRDS("data/whole.RDS"),readRDS("data/whole_v3.RDS"))
+for (i in length(combined.list)) {
+  genes.use <- c(genes.use,combined.list[[i]]@assays$RNA@var.features)
+}
+genes.use <- unique(genes.use)
+genes.use.avg <- avgexpression$RNA[genes.use,]
+gene.use_facs <- facs_combind[facs_combind$geneID %in% id2symbol[id2symbol$symbol %in% genes.use,]$ID,]
+gene.use_facs <- gene.use_facs[order(gene.use_facs$symbol),]
+genes.use.avg <- genes.use.avg[order(rownames(genes.use.avg)),]
+
+M<-cor(gene.use_facs[,2:5],genes.use.avg)
+M <- as.data.frame(M)
+M %>% rownames_to_column('FACS') %>% gather("cluster","correlation",-FACS) -> temp
+temp$FACS <- factor(temp$FACS,levels=c("algae_free_rep1","algae_free_rep2","algae_containing_rep1","algae_containing_rep2"))
+temp$cluster<-factor(temp$cluster,levels=0:17)
+
+
+ggplot(temp, aes(cluster, FACS)) +
+  geom_tile(aes(fill = correlation)) + 
+  scale_fill_gradientn(colours = rev(brewer.pal(n=8, name="RdYlBu")))
+
+```
+
+
+
+Symbiotic Marker expression in FACS transcriptome
+```{r}
+xenia.markers <- readRDS("data/cluster_markers.RDS")
+symbiotic_marker <- xenia.markers[xenia.markers$cluster ==16 & xenia.markers$avg_logFC >1 & xenia.markers$spcificity_within_cluster >0.5,]
+symbiotic_marker <- left_join(symbiotic_marker,id2symbol,by=c("gene"="symbol"))
+
+sym_marker_inFACS <- facs_combind[facs_combind$geneID %in%  symbiotic_marker$ID,]
+rownames(sym_marker_inFACS) <- sym_marker_inFACS$symbol
+sym_marker_inFACS<-sym_marker_inFACS[,2:5]
+colnames(sym_marker_inFACS)<-c("Symbiotic","Symbiotic_repeat","NonSymbiotic","NonSymbiotic_repeat")
+#normalize between samples
+cal_z_score <- function(x){
+  (x - mean(x)) / sd(x)
+}
+
+pheatmap(t(apply(sym_marker_inFACS, 1, cal_z_score)),angle_col=0,cluster_rows = T,cluster_cols = F,clustering_method="ward.D2")
+
+
+
+```
+
+symbiotic_marker within 16 clusters
+```{r}
+xenia@meta.data[,"seurat_clusters",drop=FALSE] %>% add_rownames() %>% group_by(seurat_clusters) %>% sample_n(40) -> index
+DoHeatmap(xenia, features = symbiotic_marker$gene,label=T,cells=index$rowname)
+
+```
+
+
+

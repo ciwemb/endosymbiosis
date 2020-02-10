@@ -1,0 +1,151 @@
+---
+title: "16 Clusters Analysis"
+output: html_notebook
+---
+
+Loading library
+```{r}
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+```
+
+Load gene names
+```{r}
+  id2symbol <- read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/id2symbol.txt",header=T,sep="\t",quote="\"", stringsAsFactors=F)
+#Seurat V3 symbol replace "_" with "-2"
+  id2symbol$symbol <- gsub(pattern = "_", replacement = "-", x = id2symbol$symbol)
+  mito_gene <- paste("Xe_0",23787:23800,sep="")
+  mito_gene <- id2symbol[id2symbol$ID %in% mito_gene,]$symbol
+```
+
+Load Seurat object for each sample
+```{r}
+stalk <- readRDS("data/stalk.RDS")
+tentacle <- readRDS("data/tentacle.RDS")
+whole <- readRDS("data/whole.RDS")
+whole_v3 <-readRDS("data/whole_v3.RDS")
+```
+
+Align non-regeneration samples by Seurat3
+```{r}
+combined.list <- list()
+combined.list[["whole"]] <- whole
+combined.list[["tentacle"]] <- tentacle
+combined.list[["stalk"]] <- stalk
+combined.list[["whole_v3"]] <- whole_v3
+combined.anchors <- FindIntegrationAnchors(object.list = combined.list, anchor.features =1000, dims = 1:20)
+combined.integrated <- IntegrateData(anchorset = combined.anchors, dims = 1:20,features.to.integrate = id2symbol$symbol)
+DefaultAssay(combined.integrated) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+combined.integrated <- ScaleData(combined.integrated, verbose = FALSE,features =id2symbol$symbol)
+combined.integrated <- RunPCA(combined.integrated, npcs = 20, verbose = FALSE)
+combined.integrated <- RunTSNE(combined.integrated, reduction = "pca", dims = 1:20)
+
+combined.integrated <- FindNeighbors(object = combined.integrated,dims = 1:20)
+combined.integrated <- FindClusters(combined.integrated,resolution = 0.19,algorithm =1, group.singletons = F)
+xenia <- combined.integrated
+rm(combined.integrated)
+```
+
+
+
+Identify markers for each cluster and Plot heatmap
+```{r}
+xenia@meta.data$seurat_clusters <- as.numeric(as.character(xenia@meta.data$seurat_clusters))+1
+Idents(xenia)<- "seurat_clusters"
+xenia@active.ident <- factor(x = xenia@active.ident, levels = 1:16)
+
+DimPlot(xenia, reduction = "tsne", label=T)
+
+xenia.markers<- FindAllMarkers(xenia, only.pos = TRUE, min.pct = 0.25, thresh.use = 0.25)
+xenia.markers %>% group_by(cluster) %>% top_n(10, avg_logFC) -> top10
+xenia@meta.data[,"seurat_clusters",drop=FALSE] %>% add_rownames() %>% group_by(seurat_clusters) %>% sample_n(40) -> index
+
+DoHeatmap(xenia, features = top10$gene,label=F)
+DoHeatmap(xenia, features = top10$gene,label=F,cells=index$rowname)
+
+xenia.markers <- xenia.markers[xenia.markers$p_val_adj<0.05,]
+saveRDS(xenia.markers,"data/cluster_markers.RDS")
+saveRDS(xenia,"data/non_regeneration_integrated.RDS")
+
+```
+Marker specificity
+For a particular gene and cell, We define this gene is enriched in this cell if this cell have a higher expression of this gene than the average expression among all cells.
+And for the specificity of marker gene, we define the percentage of cells with enriched marker gene expresion within the cluster.
+```{r}
+exp <- xenia@assays$integrated@data
+exp_spcificity <- exp >Matrix::rowMeans(exp)
+temp_list <- list()
+for (i in 1:16){
+  sub_cluster <- xenia.markers[xenia.markers$cluster ==i,]
+  marker_exp <- exp_spcificity[xenia.markers[xenia.markers$cluster ==i,]$gene,]
+  spcificity_within_cluster <- Matrix::rowSums(marker_exp[,colnames(marker_exp) %in% rownames(xenia@meta.data[xenia@meta.data$seurat_clusters == i,])])/sum(xenia@meta.data$seurat_clusters == i)
+  spcificity_outside_cluster <- Matrix::rowSums(marker_exp[,!colnames(marker_exp) %in% rownames(xenia@meta.data[!xenia@meta.data$seurat_clusters == i,])])/sum(!xenia@meta.data$seurat_clusters == i)
+  temp <- data.frame(gene=rownames(marker_exp),spcificity_within_cluster=spcificity_within_cluster,spcificity_outside_cluster=spcificity_outside_cluster)
+  sub_cluster <- left_join(sub_cluster, temp)
+  temp_list[[i]]<-sub_cluster
+}
+xenia.markers<- do.call(rbind,temp_list)
+#Filter low specificity markers
+xenia.markers <- xenia.markers[xenia.markers$spcificity_within_cluster>0.5,]
+saveRDS(xenia.markers,"data/cluster_markers.RDS")
+```
+
+
+violin plot of cnidocyte markers
+```{r}
+gene2plot <- c("Galactose binding lectin domain-2","Galactose binding lectin domain-3","Galactose binding lectin domain-4","Xe-028815" ,"Xe-001210")
+VlnPlot(object =xenia, features = gene2plot, pt.size= 0,combine = F,assay = "RNA") 
+
+
+```
+
+
+Cnidocytes subcluster
+```{r}
+
+cnidocyte <- SubsetData(xenia, subset.name = "seurat_clusters", accept.value =11) 
+cnidocyte <- RunTSNE(cnidocyte, reduction = "pca", dims = 1:10)
+cnidocyte <- FindNeighbors(object = cnidocyte,dims = 1:10)
+cnidocyte <- FindClusters(cnidocyte,resolution = 0.05,algorithm =1, group.singletons = F)
+
+cnidocyte<- RenameIdents(cnidocyte, "0" = "11-1")
+cnidocyte<- RenameIdents(cnidocyte, "1" = "11-2")
+p2 <- list()
+p2[[1]] <- DimPlot(cnidocyte, reduction = "tsne", label=F,cols=c("#57a0ff","#ff9757"))
+p2[[2]] <-FeaturePlot(cnidocyte,features=c("Galactose binding lectin domain-3"),blend = F,reduction = "tsne",cols =c("grey","red"))
+p2[[3]] <-FeaturePlot(cnidocyte,features=c("Xe-028815"),blend = F,reduction = "tsne",cols =c("grey","red"))
+  
+# Visualization
+
+p2[[1]] <- DimPlot(cnidocyte, reduction = "tsne", label=F,cols=c("#57a0ff","#ff9757")) + NoLegend()
+p2[[2]] <- FeaturePlot(cnidocyte, id2symbol[id2symbol$ID %in% c("Xe_028815"),]$symbol,cols = c("grey","red"),reduction="tsne")+ NoLegend()
+
+p2[[3]] <- FeaturePlot(cnidocyte, id2symbol[id2symbol$ID %in% c("Xe_006066"),]$symbol,cols = c("grey","red"),reduction="tsne")+ NoLegend() +ggtitle("Xe_006066")
+
+
+
+plot_grid(p2[[1]],p2[[2]],p2[[3]],nrow = 1)
+
+
+
+
+```
+```{r}
+cnidocyte.markers<- FindAllMarkers(cnidocyte, only.pos = TRUE, min.pct = 0.25, thresh.use = 0.25)
+cnidocyte.markers %>% group_by(cluster) %>% top_n(10, avg_logFC) -> top10
+cnidocyte@meta.data[,"integrated_snn_res.0.05",drop=FALSE] %>% add_rownames() %>% group_by(integrated_snn_res.0.05) %>% sample_n(40) -> index
+
+DoHeatmap(cnidocyte, features = top10$gene,label=F)
+DoHeatmap(cnidocyte, features = top10$gene,label=F,cells=index$rowname)
+```
+
+
+SessionInfo
+```{r}
+sessionInfo()
+```
+

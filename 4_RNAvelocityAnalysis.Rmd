@@ -1,0 +1,175 @@
+```{r}
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+
+library(velocyto.R)
+```
+#define function
+```{r}
+velocity_analysis <- function(seurat,kCells=10,reduction="tsne",grid.n=50,scale=1,arrow.scale=8)
+{
+  # take embedding from the Seurat data object
+  emb <- seurat@reductions[reduction][[1]]@cell.embeddings
+  emb <- emb[,1:2]
+  emat <- emat[,colnames(emat) %in% rownames(emb)]
+  nmat <- nmat[,colnames(nmat) %in% rownames(emb)]
+  # Estimate the cell-cell distances 
+  cell.dist <- as.dist(1-armaCor(t(x = Embeddings(object = seurat, reduction = "pca"))))
+  
+  fit.quantile <- 0.02
+  
+  # Main velocity estimation
+  rvel.cd <- gene.relative.velocity.estimates(emat,nmat,deltaT=2,kCells=kCells,cell.dist=cell.dist, fit.quantile=fit.quantile, n.cores=12)
+  
+  
+ gg <- DimPlot(seurat, reduction = reduction) +scale_color_manual(values=c("green","red","grey"))
+  colors <- as.list(ggplot_build(gg)$data[[1]]$colour)
+  names(colors) <- rownames(emb)
+  show.velocity.on.embedding.cor(emb*scale,rvel.cd,n=30,scale='sqrt',
+                                 cell.colors=ac(colors,alpha=0.5),
+                                 cex=0.8,arrow.scale=arrow.scale,show.grid.flow=T,
+                                 min.grid.cell.mass=1.0,grid.n=grid.n,arrow.lwd=1,
+                                 do.par=F,cell.border.alpha = 0.1,
+                                 n.cores=12,main="Cell Velocity")
+}
+
+AddReads <- function (loomfile,sample){
+ldat2 <- read.loom.matrices(loomfile)
+emat2 <- ldat2$spliced
+nmat2 <- ldat2$unspliced
+colnames(emat2)<-paste(substring(colnames(emat2),28,43),sample,sep="")
+colnames(nmat2)<-paste(substring(colnames(nmat2),28,43),sample,sep="")
+emat <<- cbind(emat,emat2)
+nmat <<- cbind(nmat,nmat2)
+}
+```
+
+Splicing Matrix for RNAvelocity
+```{r}
+ldat <- read.loom.matrices("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/Reg4d_v3/possorted_genome_bam_UQCW6.loom")
+emat <- ldat$spliced
+nmat <- ldat$unspliced
+colnames(emat)<-paste(substring(colnames(emat),28,43),"reg4d_v3",sep="")
+colnames(nmat)<-paste(substring(colnames(nmat),28,43),"reg4d_v3",sep="")
+AddReads(loomfile="/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/reg4d/possorted_genome_bam_71VGW.loom",sample="reg4d")
+```
+unsplicing and splicing reads comparison
+```{r}
+splice_matrix <- t(rbind(Matrix::colSums(emat),Matrix::colSums(nmat)))
+colnames(splice_matrix) <- c("spliced","unspliced")
+splice_matrix <- as.data.frame(splice_matrix)
+splice_matrix$sample <- substring(rownames(splice_matrix),17,24)
+splice_matrix$unspliced_ratio <- splice_matrix$unspliced/(splice_matrix$spliced+splice_matrix$unspliced)
+splice_matrix$identity <- rownames(splice_matrix)
+
+splice_matrix %>% group_by(sample) %>% summarise(unspliced_ratio = mean(unspliced_ratio))
+ggplot(data=splice_matrix[splice_matrix$sample %in% c("reg4d","reg4d_v3"),])+geom_density(aes(x=unspliced_ratio,color=sample))
+```
+
+```{r}
+reg4d_v3 <- readRDS("data/reg4d_v3.RDS")
+reg4d_v3@meta.data$orig.ident <- rownames(reg4d_v3@meta.data)
+
+xenia <- readRDS("data/non_regeneration_integrated.RDS")
+reg4d.anchors <- FindTransferAnchors(reference = xenia, query = reg4d_v3, 
+    dims = 1:30)
+predictions <- TransferData(anchorset = reg4d.anchors, refdata =as.character(xenia$seurat_clusters), 
+    dims = 1:30)
+reg4d_v3 <- AddMetaData(reg4d_v3, metadata = predictions)
+```
+
+
+```{r}
+reg4d_v3 <- ScaleData(reg4d_v3, verbose = FALSE)
+reg4d_v3 <- RunPCA(reg4d_v3, npcs = 30, verbose = FALSE)
+reg4d_v3@meta.data <- left_join(reg4d_v3@meta.data,splice_matrix[,c("identity","unspliced_ratio")],by=c("orig.ident"="identity"))
+rownames(reg4d_v3@meta.data) <- reg4d_v3@meta.data$orig.ident
+#As in the RNA velocity paper mentioned, 15–25% of reads contained unspliced intronic sequences.  While in xenia, the unspliced reads percentage is lower. This is more severe when we carried out scRNA with 10x v3 chemical. As unspliced intronic sequences was used for cell feature fate prediction, we filter out cells with less than 10% unspliced reads and use remained cells for RNA velocity analysis.
+reg4d_v3_filterd <- reg4d_v3[,rownames(reg4d_v3@meta.data[reg4d_v3@meta.data$unspliced_ratio>0.1,])]
+reg4d_v3_filterd<- RunTSNE(reg4d_v3_filterd, reduction = "pca", dims = 1:25)
+DimPlot(reg4d_v3_filterd,reduction = "tsne",group.by = "predicted.id",label = T)
+velocity_analysis(reg4d_v3_filterd,kCells=2,reduction="tsne",scale = 0.3)
+```
+
+
+Define early and late endo-symbiotic cell in reg4d_v3 sample
+```{r}
+temp <-reg4d_v3_filterd@reductions$tsne@cell.embeddings
+temp <- as.data.frame(as.matrix(temp))
+temp$seurat_clusters <- reg4d_v3_filterd@meta.data$predicted.id
+
+temp$symbiotic <- "Other"
+temp[temp$seurat_clusters ==16 & temp$tSNE_2 < -20 & temp$tSNE_1 >5, ]$symbiotic <- "Late symbiotic"
+temp[temp$tSNE_1 <18.5 & temp$tSNE_2 < -20 & temp$seurat_clusters ==16, ]$symbiotic <- "Early symbiotic"
+temp$symbiotic <- factor(temp$symbiotic,levels = c("Early symbiotic","Late symbiotic","Other"))
+reg4d_v3_filterd@meta.data$symbiotic <- temp$symbiotic
+```
+
+```{r}
+Idents(reg4d_v3_filterd) <- "symbiotic"
+
+#set scale to 0.3 to fit the RNA velocity space
+velocity_analysis(reg4d_v3_filterd,kCells = 2,reduction = "tsne",scale = 0.3,arrow.scale = 15)
+
+```
+
+reg4d v2 chemical RNA velocity
+```{r}
+reg4d <- readRDS("data/reg4d.RDS")
+
+reg4d.anchors <- FindTransferAnchors(reference = xenia, query = reg4d, 
+    dims = 1:30)
+predictions <- TransferData(anchorset = reg4d.anchors, refdata =as.character(xenia$seurat_clusters), 
+    dims = 1:30)
+reg4d <- AddMetaData(reg4d, metadata = predictions)
+reg4d <- ScaleData(reg4d, verbose = FALSE)
+reg4d <- RunPCA(reg4d, npcs = 30, verbose = FALSE)
+```
+
+```{r}
+reg4d <- RunTSNE(reg4d, reduction = "pca", dims = 1:15)
+reg4d@meta.data$orig.ident <- rownames(reg4d@meta.data)
+DimPlot(reg4d_v3_filterd,reduction = "tsne",group.by = "predicted.id",label = T)
+velocity_analysis(reg4d,kCells = 2,reduction = "tsne",arrow.scale = 15)
+```
+
+
+Define early and late symbiotic in V2 chemical
+```{r}
+temp <-reg4d@reductions$tsne@cell.embeddings
+temp <- as.data.frame(as.matrix(temp))
+temp$seurat_clusters <- reg4d@meta.data$predicted.id
+temp$symbiotic <- "Other"
+temp[temp$seurat_clusters ==16, ]$symbiotic <- "Late symbiotic"
+temp[ temp$tSNE_2 < 10.2 & temp$seurat_clusters ==16, ]$symbiotic <- "Early symbiotic"
+temp$symbiotic <- factor(temp$symbiotic,levels = c("Early symbiotic","Late symbiotic","Other"))
+reg4d@meta.data$symbiotic <- temp$symbiotic
+```
+```{r}
+Idents(reg4d) <- "symbiotic"
+velocity_analysis(reg4d,kCells = 2,reduction = "tsne",arrow.scale = 15)
+```
+Combine early and late symbiotic information from both sample and used later for monocle pseudotime analysis
+```{r}
+symbiotictic_velocity <- rbind(reg4d@meta.data[,c("orig.ident","symbiotic")],reg4d_v3_filterd@meta.data[,c("orig.ident","symbiotic")])
+saveRDS(symbiotictic_velocity,"data/symbiotic_velocity.RDS")
+```
+
+
+save combined regeneration object for later use
+```{r}
+reg4d.list <- list(reg4d=reg4d,reg4d_v3=reg4d_v3)
+reg4d.anchors <- FindIntegrationAnchors(object.list = reg4d.list, dims = 1:30)
+reg4d.integrated <- IntegrateData(anchorset = reg4d.anchors, dims = 1:30)
+xenia <- readRDS("data/non_regeneration_integrated.RDS")
+reg4d.anchors <- FindTransferAnchors(reference = xenia, query = reg4d.integrated, 
+    dims = 1:30)
+predictions <- TransferData(anchorset = reg4d.anchors, refdata =as.character(xenia$seurat_clusters), 
+    dims = 1:30)
+reg4d.integrated <- AddMetaData(reg4d.integrated, metadata = predictions)
+Idents(reg4d.integrated) <-"predicted.id"
+saveRDS(reg4d.integrated,"data/reg4d.integrated.RDS")
+```
+
+

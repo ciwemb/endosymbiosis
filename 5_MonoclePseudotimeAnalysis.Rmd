@@ -1,0 +1,275 @@
+Loading library
+```{r}
+library(monocle)
+library(ggsci)
+library(dplyr)
+library(pheatmap)
+library(velocyto.R)
+library(Seurat)
+```
+Load gene names
+```{r}
+  id2symbol <- read.table("data/id2symbol.txt",header=T,sep="\t",quote="\"", stringsAsFactors=F)
+#Seurat V3 symbol replace "_" with "-2"
+  id2symbol$symbol <- gsub(pattern = "_", replacement = "-", x = id2symbol$symbol)
+  mito_gene <- paste("Xe_0",23787:23800,sep="")
+  mito_gene <- id2symbol[id2symbol$ID %in% mito_gene,]$symbol
+```
+
+Interegrate data from all the libraries
+```{r}
+combined.list <- list()
+combined.list[["whole"]] <- readRDS("data/whole.RDS")
+combined.list[["tentacle"]] <- readRDS("data/tentacle.RDS")
+combined.list[["stalk"]] <- readRDS("data/stalk.RDS")
+combined.list[["whole_v3"]] <- readRDS("data/whole_v3.RDS")
+combined.list[["reg4d"]] <- readRDS("data/reg4d.RDS")
+combined.list[["reg4d_v3"]] <- readRDS("data/reg4d_v3.RDS")
+
+combined.anchors <- FindIntegrationAnchors(object.list = combined.list, anchor.features =2000, dims = 1:25)
+xenia.all <- IntegrateData(anchorset = combined.anchors, dims = 1:25,features.to.integrate = id2symbol$symbol)
+DefaultAssay(xenia.all) <- "integrated"
+```
+
+
+mapping cell identity
+
+```{r}
+reg4d.integrated <- readRDS("data/reg4d.integrated.RDS")
+xenia <- readRDS("data/non_regeneration_integrated.RDS")
+cell.ID <- reg4d.integrated@meta.data[,c("orig.ident","predicted.id")]
+colnames(cell.ID) <-c("orig.ident","seurat_clusters")
+cell.ID <-  rbind(cell.ID, xenia@meta.data[,c("orig.ident","seurat_clusters")])
+cell.ID$orig.ident <- rownames(cell.ID)
+xenia.all@meta.data$orig.ident <- rownames(xenia.all@meta.data)
+xenia.all@meta.data <- left_join(xenia.all@meta.data,cell.ID,by="orig.ident")
+rownames(xenia.all@meta.data) <- xenia.all@meta.data$orig.ident
+saveRDS(xenia.all,"data/All_integrated.RDS")
+rm(reg4d.integrated)
+rm(xenia)
+```
+
+
+
+
+use all symbiotic cell for monocle analysis 
+create symbiotic monocle object
+```{r}
+
+data <- as(as.matrix(xenia.all@assays$integrated@data)[,rownames(xenia.all@meta.data[xenia.all@meta.data$seurat_clusters==16,])], 'sparseMatrix')
+
+
+pd <- new('AnnotatedDataFrame', data = xenia.all@meta.data[xenia.all@meta.data$seurat_clusters==16,])
+fData <- data.frame(gene_short_name = row.names(data), row.names = row.names(data))
+fd <- new('AnnotatedDataFrame', data = fData)
+
+
+#Construct monocle cds
+symbiotic_mono <- newCellDataSet(data,
+                              phenoData = pd,
+                              featureData = fd,
+                              #lowerDetectionLimit = 0.5,
+                              expressionFamily = uninormal())# since I have already normalized
+
+
+symbiotic_mono <- reduceDimension( symbiotic_mono, reduction_method='tSNE',norm_method ="none", residualModelFormulaStr = " ~percent.mito")
+symbiotic_mono <- clusterCells( symbiotic_mono,num_clusters = 4)
+
+symbiotic_clustering_DEG_genes <- differentialGeneTest( symbiotic_mono, fullModelFormulaStr="~Cluster",cores=10 )
+#use the top 1000 gene to do the pseudotime
+symbiotic_ordering_genes <- row.names( symbiotic_clustering_DEG_genes )[ order( symbiotic_clustering_DEG_genes$qval ) ][ 1:1000 ]
+symbiotic_mono <- setOrderingFilter( symbiotic_mono, ordering_genes=symbiotic_ordering_genes )
+
+
+symbiotic_mono <- reduceDimension( symbiotic_mono, max_components = 3, reduction_method ="DDRTree" ,norm_method ="none",residualModelFormulaStr = "~percent.mito")
+symbiotic_mono <- orderCells( symbiotic_mono, reverse = F)
+
+plot_cell_trajectory(symbiotic_mono, color_by="Pseudotime",show_tree = F,show_branch_points=F,show_state_number =F )+scale_color_gradientn(colours = c("green","red"))
+```
+Combine RNA velocity early and late symbiotic information
+```{r}
+temp <- readRDS("data/symbiotic_velocity.RDS")
+pData(symbiotic_mono) <- left_join(pData(symbiotic_mono),temp)
+rownames(pData(symbiotic_mono)) <- pData(symbiotic_mono)$orig.ident
+pData(symbiotic_mono)[is.na(pData(symbiotic_mono)$symbiotic),]$symbiotic <- "Other"
+plot_cell_trajectory(symbiotic_mono, color_by="symbiotic",show_tree = F,show_branch_points=F )+ scale_color_manual(values=c("green","red","grey"))+ geom_point(alpha = 0.01)
+
+```
+
+
+
+corelation of symbiotic cell in pseudotime
+```{r}
+sym_facs<-read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/FACS_transcriptome/algae_containing_rep1.txt",header=T,sep="\t")
+sym_facs <- sym_facs[,c(1,7)]
+non_sym_facs<-read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/FACS_transcriptome/algae_free_rep1.txt",header=T,sep="\t")
+non_sym_facs <- non_sym_facs[,c(1,7)]
+facs_combind <- left_join(sym_facs,non_sym_facs,by=("gene_id"))
+colnames(facs_combind) <- c("geneID","symbiotic","non_symbiotic")
+sym_facs_2<-read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/FACS_transcriptome/algae_containing_rep2.txt",header=T,sep="\t")
+sym_facs_2 <- sym_facs_2[,c(1,7)]
+non_sym_facs_2<-read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/FACS_transcriptome/algae_free_rep1.txt",header=T,sep="\t")
+non_sym_facs_2 <- non_sym_facs_2[,c(1,7)]
+facs_combind <- left_join(facs_combind,sym_facs_2,by=c("geneID"="gene_id"))
+facs_combind <- left_join(facs_combind,non_sym_facs_2,by=c("geneID"="gene_id"))
+colnames(facs_combind) <- c("geneID","symbiotic","non_symbiotic","symbiotic repeat","non_symbiotic repeat")
+facs_combind <- facs_combind[,c(1,2,4,3,5)]
+
+symbiotic_mono <- detectGenes( symbiotic_mono, min_expr=0.05 )
+symbiotic_expressed_genes <- row.names( subset( fData( symbiotic_mono ), num_cells_expressed >= 5 ) )
+  symbiotic_cell <- pData(symbiotic_mono)
+  symbiotic_cell <- symbiotic_cell[order(symbiotic_cell$Pseudotime),]
+  symbiotic_expression <- xenia.all@assays$RNA@counts[symbiotic_expressed_genes,]
+  symbiotic_expression <- symbiotic_expression[,rownames(symbiotic_cell)]
+  gene.use_facs_2 <- facs_combind[facs_combind$geneID %in% id2symbol[id2symbol$symbol %in% symbiotic_expressed_genes,]$ID,]
+  gene.use_facs_2 <- left_join(gene.use_facs_2,id2symbol,by=c("geneID"="ID"))
+  rownames(gene.use_facs_2)<-gene.use_facs_2$symbol
+  gene.use_facs_2 <- gene.use_facs_2[rownames(symbiotic_expression),]
+  gene.use_facs_2$symbiotic_mean <- rowMeans( gene.use_facs_2[,c(2,3)])
+  gene.use_facs_2$non_symbiotic_mean <- rowMeans( gene.use_facs_2[,c(4,5)])
+  #Correlation
+  M<-cor(gene.use_facs_2[,7:8],as.matrix(symbiotic_expression))
+  M <- t(M)
+  M <- as.data.frame(M)
+  pData(symbiotic_mono)$cor_symbiotic <-1
+  pData(symbiotic_mono)[rownames(M),]$cor_symbiotic <- M$symbiotic_mean
+  pData(symbiotic_mono)$cor_nonsymbiotic <-1
+  pData(symbiotic_mono)[rownames(M),]$cor_nonsymbiotic <- M$non_symbiotic_mean
+
+  M$pseudotime <- as.vector(unlist(symbiotic_cell$Pseudotime))
+  M$sample <- as.vector(unlist(symbiotic_cell$sample))
+
+#correlation with FACS algea+ cell
+  ggplot(M) + geom_point(aes(pseudotime,y="1",color=symbiotic_mean),position = position_jitterdodge(jitter.height =0.3,dodge.width=0,seed = 2))+geom_vline(xintercept = c(5,12.5,17.5,28),linetype="dashed")+scale_color_gradientn(colours = rgb_gsea(n = 512),limits=c(0,0.8))
+#correlation with FACS algea- cell
+ggplot(M) + geom_point(aes(pseudotime,y="1",color=non_symbiotic_mean),position = position_jitterdodge(jitter.height =0.3,dodge.width=0,seed = 2))+geom_vline(xintercept = c(5,12.5,17.5,28),linetype="dashed")+scale_color_gradientn(colours = rgb_gsea(n = 512),limits=c(0,0.8)) 
+#correlation with FACS algea+ cell
+plot_cell_trajectory(symbiotic_mono, color_by="cor_symbiotic",show_tree = F,show_branch_points=F,show_state_number =F ) +scale_color_gradientn(colours = rgb_gsea(n = 512),limits=c(0,0.8))
+#correlation with FACS algea- cell
+plot_cell_trajectory(symbiotic_mono, color_by="cor_nonsymbiotic",show_tree = F,show_branch_points=F,show_state_number =F ) +scale_color_gradientn(colours = rgb_gsea(n = 512),limits=c(0,0.8))
+```
+
+
+Different_expressed genes
+```{r}
+expressed_genes <- row.names(subset(fData(symbiotic_mono),num_cells_expressed >= 5))
+symbiotic_pseudotime_de <- differentialGeneTest(symbiotic_mono[expressed_genes,],
+                                                fullModelFormulaStr = "~sm.ns(Pseudotime)",
+                                                relative_expr=T,
+                                                cores = 8)
+symbiotic_pseudotime_de <- symbiotic_pseudotime_de %>% arrange(qval) 
+#significat gene q<0.05
+symbiotic_pseudotime_de %>% arrange(qval) %>% filter(qval < 0.05) %>% dplyr::select(gene_short_name) -> gene_to_cluster
+gene_to_cluster <- gene_to_cluster$gene_short_name
+
+#As there's only two cells have pseudotime value bigger than 37. They are probably outliers, remove it from the pseudotime gene analysis
+#Even remain these two cells, the figure looks exactly same.
+valid_cell <- rownames(pData(symbiotic_mono)[pData(symbiotic_mono)$Pseudotime<37,])
+my_pseudotime_cluster <- plot_pseudotime_heatmap(symbiotic_mono[gene_to_cluster,valid_cell],
+                                                 norm_method = "log",
+                                                 num_clusters =5,
+                                                 cores = 8,
+                                                 show_rownames = TRUE,
+                                                 return_heatmap = TRUE,use_gene_short_name = F,hclust_method = "complete")
+
+my_pseudotime_cluster
+```
+modify heatmap figure
+```{r}
+    newdata <- data.frame(Pseudotime = seq(min(pData(symbiotic_mono[gene_to_cluster,valid_cell])$Pseudotime), 
+        max(pData(symbiotic_mono[gene_to_cluster,valid_cell])$Pseudotime), length.out = 100))
+    m <- genSmoothCurves(symbiotic_mono[gene_to_cluster,valid_cell], cores = 8, trend_formula = "~sm.ns(Pseudotime, df=3)", 
+        relative_expr = T, new_data = newdata)
+    m = m[!apply(m, 1, sum) == 0, ]
+    m = log10(m + 1)
+    m = m[!apply(m, 1, sd) == 0, ]
+    m = Matrix::t(scale(Matrix::t(m), center = TRUE))
+    m = m[is.na(row.names(m)) == FALSE, ]
+    m[is.nan(m)] = 0
+    m[m > 3] = 3
+    m[m < -3] = -3
+    heatmap_matrix <- m
+    row_dist <- as.dist((1 - cor(Matrix::t(heatmap_matrix)))/2)
+    row_dist[is.na(row_dist)] <- 1
+#The following code is swipped from colorRamps package which is used to make the pallette
+table.ramp <- function(n, mid = 0.5, sill = 0.5, base = 1, height = 1)
+{
+    x <- seq(0, 1, length.out = n)
+    y <- rep(0, length(x))
+    sill.min <- max(c(1, round((n - 1) * (mid - sill / 2)) + 1))
+    sill.max <- min(c(n, round((n - 1) * (mid + sill / 2)) + 1))
+    y[sill.min:sill.max] <- 1
+    base.min <- round((n - 1) * (mid - base / 2)) + 1
+    base.max <- round((n - 1) * (mid + base / 2)) + 1
+    xi <- base.min:sill.min
+    yi <- seq(0, 1, length.out = length(xi))
+    i <- which(xi > 0 & xi <= n)
+    y[xi[i]] <- yi[i]
+    xi <- sill.max:base.max
+    yi <- seq(1, 0, length.out = length(xi))
+    i <- which(xi > 0 & xi <= n)
+    y[xi[i]] <- yi[i]
+    height * y
+}
+
+#' @importFrom grDevices rgb
+rgb.tables <- function(n,
+red = c(0.75, 0.25, 1),
+green = c(0.5, 0.25, 1),
+blue = c(0.25, 0.25, 1))
+{
+    rr <- do.call("table.ramp", as.list(c(n, red)))
+    gr <- do.call("table.ramp", as.list(c(n, green)))
+    br <- do.call("table.ramp", as.list(c(n, blue)))
+    rgb(rr, gr, br)
+}
+
+matlab.like <- function(n) rgb.tables(n)
+
+matlab.like2 <- function(n)
+rgb.tables(n,
+red = c(0.8, 0.2, 1),
+green = c(0.5, 0.4, 0.8),
+blue = c(0.2, 0.2, 1))
+
+blue2green2red <- matlab.like2
+
+
+     bks <- seq(-3.1, 3.1, by = 0.1)
+     hmcols <-blue2green2red(length(bks) - 1)
+        
+pheatmap(heatmap_matrix, useRaster = T, cluster_cols = FALSE, 
+        cluster_rows = T, show_rownames = F, show_colnames = T, 
+        clustering_distance_rows = row_dist, clustering_method = "complete",  silent = TRUE, filename = NA, cutree_rows = 5,
+        breaks = bks, border_color = NA, color = hmcols)
+
+```
+Define stage based on gene expression along pseudotime
+```{r}
+pData(symbiotic_mono)$stage <-"Transition"
+pData(symbiotic_mono)[pData(symbiotic_mono)$Pseudotime <newdata[15,], ]$stage <- "Pre-symbiotic"
+pData(symbiotic_mono)[pData(symbiotic_mono)$Pseudotime >=newdata[15,] & pData(symbiotic_mono)$Pseudotime<newdata[36,],]$stage <- "Transition1"
+pData(symbiotic_mono)[pData(symbiotic_mono)$Pseudotime >=newdata[36,] & pData(symbiotic_mono)$Pseudotime<newdata[50,],]$stage <- "Mature"
+pData(symbiotic_mono)[pData(symbiotic_mono)$Pseudotime >=newdata[50,] & pData(symbiotic_mono)$Pseudotime<newdata[79,],]$stage <- "Transition2"
+pData(symbiotic_mono)[pData(symbiotic_mono)$Pseudotime >=newdata[79,], ]$stage <- "Post-symbiotic"
+
+ggplot(pData( symbiotic_mono )) + geom_point(aes(Pseudotime,y="1",color=stage),position = position_jitterdodge(jitter.height =0.3,dodge.width=0,seed = 2))
+
+plot_cell_trajectory(symbiotic_mono, color_by="stage",show_tree = F,show_branch_points=F,show_state_number =F )
+```
+
+
+Sample annotation
+```{r}
+pData(symbiotic_mono)$sample_annotation <- pData(symbiotic_mono)$sample
+pData(symbiotic_mono)$sample_annotation[pData(symbiotic_mono)$sample_annotation == "reg4d"] <- "Regeneration"
+pData(symbiotic_mono)$sample_annotation[pData(symbiotic_mono)$sample_annotation == "reg4d_v3"] <- "Regeneration"
+pData(symbiotic_mono)$sample_annotation[pData(symbiotic_mono)$sample_annotation %in% c("whole","stalk","tentacle","whole_v3") ] <- "Non_regeneration"
+```
+```{r}
+cat <- pData(symbiotic_mono) %>% group_by(sample_annotation,stage) %>% summarise(n=n())
+cat <- cat %>% group_by(sample_annotation) %>% mutate(percentage = n/sum(n))
+cat$stage <- factor(cat$stage,levels = c("Pre-symbiotic","Transition1","Mature","Transition2","Post-symbiotic"))
+ggplot(data=cat)+geom_bar(aes(x=stage,y=percentage,fill=sample_annotation),stat="identity",position=position_dodge()) +scale_fill_npg()+theme_bw()
+```
+
