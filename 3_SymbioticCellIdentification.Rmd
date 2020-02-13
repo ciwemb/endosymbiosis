@@ -1,6 +1,8 @@
 ---
 title: "Symbiotic cell identification"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 Loading library
@@ -28,15 +30,15 @@ xenia <- readRDS("data/non_regeneration_integrated.RDS")
 ```
 Identify symbiotic cells
 ```{r}
-sym_facs<-read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/FACS_transcriptome/algae_containing_rep1.txt",header=T,sep="\t")
+sym_facs<-read.table("data/FACS_transcriptome/algae_containing_rep1.txt",header=T,sep="\t")
 sym_facs <- sym_facs[,c(1,7)]
-non_sym_facs<-read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/FACS_transcriptome/algae_free_rep1.txt",header=T,sep="\t")
+non_sym_facs<-read.table("data/FACS_transcriptome/algae_free_rep1.txt",header=T,sep="\t")
 non_sym_facs <- non_sym_facs[,c(1,7)]
 facs_combind <- left_join(sym_facs,non_sym_facs,by=("gene_id"))
 colnames(facs_combind) <- c("geneID","symbiotic","non_symbiotic")
-sym_facs_2<-read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/FACS_transcriptome/algae_containing_rep2.txt",header=T,sep="\t")
+sym_facs_2<-read.table("data/FACS_transcriptome/algae_containing_rep2.txt",header=T,sep="\t")
 sym_facs_2 <- sym_facs_2[,c(1,7)]
-non_sym_facs_2<-read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/FACS_transcriptome/algae_free_rep2.txt",header=T,sep="\t")
+non_sym_facs_2<-read.table("data/FACS_transcriptome/algae_free_rep2.txt",header=T,sep="\t")
 non_sym_facs_2 <- non_sym_facs_2[,c(1,7)]
 facs_combind <- left_join(facs_combind,sym_facs_2,by=c("geneID"="gene_id"))
 facs_combind <- left_join(facs_combind,non_sym_facs_2,by=c("geneID"="gene_id"))

@@ -1,6 +1,8 @@
 ---
 title: "16 Clusters Analysis"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 Loading library
@@ -13,8 +15,8 @@ library(cowplot)
 
 Load gene names
 ```{r}
-  id2symbol <- read.table("/mnt/sequence/mhu2/git/mhu2-xelongata/scRNA/wrap_up/data/id2symbol.txt",header=T,sep="\t",quote="\"", stringsAsFactors=F)
-#Seurat V3 symbol replace "_" with "-2"
+  id2symbol <- read.table("data/id2symbol.txt",header=T,sep="\t",quote="\"", stringsAsFactors=F)
+#Seurat V3 symbol replace "_" with "-"
   id2symbol$symbol <- gsub(pattern = "_", replacement = "-", x = id2symbol$symbol)
   mito_gene <- paste("Xe_0",23787:23800,sep="")
   mito_gene <- id2symbol[id2symbol$ID %in% mito_gene,]$symbol

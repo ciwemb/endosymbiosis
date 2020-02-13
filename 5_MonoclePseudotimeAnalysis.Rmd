@@ -17,7 +17,7 @@ Load gene names
 ```
 
 Interegrate data from all the libraries
-```{r}
+```{r echo=FALSE, message=FALSE}
 combined.list <- list()
 combined.list[["whole"]] <- readRDS("data/whole.RDS")
 combined.list[["tentacle"]] <- readRDS("data/tentacle.RDS")

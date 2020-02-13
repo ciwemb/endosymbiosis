@@ -6,7 +6,7 @@ This repository contains the code and analyses associated with a single-cell RNA
 
 > Minjie Hu, Xiaobin Zheng, Chen-Ming Fan, and Yixian Zheng (2020) Single cell lineage dynamics of the endosymbiotic cell type in a soft coral *Xenia* species bioRxiv [https://doi.org/10.1101/2019.12.12.874602](https://www.biorxiv.org/content/10.1101/2019.12.12.874602v1)
 
-![Figure 1]!(https://raw.githubusercontent.com/ciwemb/endosymbiosis/master/figures/banner.jpg)
+![Figure 1](https://raw.githubusercontent.com/ciwemb/endosymbiosis/master/figures/banner.jpg)
 
 The transcriptome and the genome can be accessed via Carnegie [Coral & Marine Organisms](http://cmo.carnegiescience.edu/data/)
 
@@ -35,7 +35,7 @@ R Markdown documents with analysis code (also available as knitted html files).
 
 ## Additional files
 
-All data files needed to repeat the analysis the can be fetched through following commands:
+All data files needed to repeat the analysis can be fetched through following commands:
 
 ```
 git clone https://github.com/ciwemb/endosymbiosis

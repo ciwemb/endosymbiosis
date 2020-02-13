@@ -88,7 +88,7 @@ rownames(reg4d_v3@meta.data) <- reg4d_v3@meta.data$orig.ident
 #As in the RNA velocity paper mentioned, 15–25% of reads contained unspliced intronic sequences.  While in xenia, the unspliced reads percentage is lower. This is more severe when we carried out scRNA with 10x v3 chemical. As unspliced intronic sequences was used for cell feature fate prediction, we filter out cells with less than 10% unspliced reads and use remained cells for RNA velocity analysis.
 reg4d_v3_filterd <- reg4d_v3[,rownames(reg4d_v3@meta.data[reg4d_v3@meta.data$unspliced_ratio>0.1,])]
 reg4d_v3_filterd<- RunTSNE(reg4d_v3_filterd, reduction = "pca", dims = 1:25)
-DimPlot(reg4d_v3_filterd,reduction = "tsne",group.by = "predicted.id",label = T)
+#DimPlot(reg4d_v3_filterd,reduction = "tsne",group.by = "predicted.id",label = T)
 velocity_analysis(reg4d_v3_filterd,kCells=2,reduction="tsne",scale = 0.3)
 ```
 
@@ -130,7 +130,7 @@ reg4d <- RunPCA(reg4d, npcs = 30, verbose = FALSE)
 ```{r}
 reg4d <- RunTSNE(reg4d, reduction = "pca", dims = 1:15)
 reg4d@meta.data$orig.ident <- rownames(reg4d@meta.data)
-DimPlot(reg4d_v3_filterd,reduction = "tsne",group.by = "predicted.id",label = T)
+#DimPlot(reg4d_v3_filterd,reduction = "tsne",group.by = "predicted.id",label = T)
 velocity_analysis(reg4d,kCells = 2,reduction = "tsne",arrow.scale = 15)
 ```
 
