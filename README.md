@@ -39,7 +39,7 @@ All data files needed to repeat the analysis can be fetched through following co
 
 ```
 git clone https://github.com/ciwemb/endosymbiosis
-wget -r -np -nH --reject="index.html*" \ 
+wget -r -np -nH --reject="index.html*" \
         http://cmo.carnegiescience.edu/endosymbiosis/
 ```
 
