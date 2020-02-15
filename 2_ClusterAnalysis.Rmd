@@ -75,8 +75,8 @@ saveRDS(xenia,"data/non_regeneration_integrated.RDS")
 
 ```
 Marker specificity
-For a particular gene and cell, We define this gene is enriched in this cell if this cell have a higher expression of this gene than the average expression among all cells.
-And for the specificity of marker gene, we define the percentage of cells with enriched marker gene expresion within the cluster.
+We define that a gene is enriched in a cell if the expression of the gene in the cell is higher than the average expression of the gene among all cells. 
+We further define the specificity of a marker gene in a cluster as the percentage of cells , in which the marker gene is enriched as defined above within the cluster.
 ```{r}
 exp <- xenia@assays$integrated@data
 exp_spcificity <- exp >Matrix::rowMeans(exp)
