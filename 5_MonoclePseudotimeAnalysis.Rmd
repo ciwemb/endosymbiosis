@@ -257,7 +257,22 @@ ggplot(pData( symbiotic_mono )) + geom_point(aes(Pseudotime,y="1",color=stage),p
 
 plot_cell_trajectory(symbiotic_mono, color_by="stage",show_tree = F,show_branch_points=F,show_state_number =F )
 ```
+Find enriched genes for each stage
+```{r}
+stage_gene <- as.matrix(cbind(1:nrow(heatmap_matrix), max.col(heatmap_matrix)))
+stage_gene <-data.frame(presymbiotic= rowMeans(heatmap_matrix[,1:14]),transition1= rowMeans(heatmap_matrix[,15:36]),mature= rowMeans(heatmap_matrix[,37:49]),transition2= rowMeans(heatmap_matrix[,50:78]),postsymbiotic= rowMeans(heatmap_matrix[,79:100]))
+stage_gene$state <- max.col(stage_gene)
+stage_gene$gene_name <- rownames(stage_gene)
+stage_gene <- left_join(stage_gene,id2symbol,by=c("gene_name"="symbol"))
+temp <- read.table("../Pseudotime_human.hit",sep="\t")
+temp <- temp[,c(1,5)]
+stage_gene <- left_join(stage_gene,temp, by=c("ID"="V1"))
+stage_gene <- stage_gene[order(stage_gene$state),]
+stage_gene$state <- as.factor(stage_gene$state)
+stage_gene$state <- revalue(stage_gene$state, c("1" = "presymbiotic", "2"="transition1","3"="mature","4"="transition2","5"="postsymbiotic"))
 
+write.table(stage_gene[,c(8,7,6,1:5,9)],"Pseudotime_gene.xls",row.names = F,sep="\t")
+```
 
 Sample annotation
 ```{r}
