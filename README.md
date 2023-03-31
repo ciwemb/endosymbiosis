@@ -1,10 +1,10 @@
-# Single cell lineage dynamics of the endosymbiotic cell type in a soft coral *Xenia* species
+# Lineage dynamics of the endosymbiotic cell type in the soft coral *Xenia*
 
 ## Introduction
 
 This repository contains the code and analyses associated with a single-cell RNA-seq study of *Xenia sp.* presented in the following manuscript:
 
-> Minjie Hu, Xiaobin Zheng, Chen-Ming Fan, and Yixian Zheng (2020) Single cell lineage dynamics of the endosymbiotic cell type in a soft coral *Xenia* species bioRxiv [https://doi.org/10.1101/2019.12.12.874602](https://www.biorxiv.org/content/10.1101/2019.12.12.874602v1)
+> Minjie Hu, Xiaobin Zheng, Chen-Ming Fan, and Yixian Zheng (2020) Lineage dynamics of the endosymbiotic cell type in the soft coral *Xenia* [https://www.nature.com/articles/s41586-020-2385-7](https://www.nature.com/articles/s41586-020-2385-7)
 
 ![Figure 1](https://raw.githubusercontent.com/ciwemb/endosymbiosis/master/figures/banner.jpg)
 
