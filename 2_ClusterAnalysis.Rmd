@@ -85,7 +85,7 @@ for (i in 1:16){
   sub_cluster <- xenia.markers[xenia.markers$cluster ==i,]
   marker_exp <- exp_spcificity[xenia.markers[xenia.markers$cluster ==i,]$gene,]
   spcificity_within_cluster <- Matrix::rowSums(marker_exp[,colnames(marker_exp) %in% rownames(xenia@meta.data[xenia@meta.data$seurat_clusters == i,])])/sum(xenia@meta.data$seurat_clusters == i)
-  spcificity_outside_cluster <- Matrix::rowSums(marker_exp[,!colnames(marker_exp) %in% rownames(xenia@meta.data[!xenia@meta.data$seurat_clusters == i,])])/sum(!xenia@meta.data$seurat_clusters == i)
+  spcificity_outside_cluster <- Matrix::rowSums(marker_exp[,colnames(marker_exp) %in% rownames(xenia@meta.data[!xenia@meta.data$seurat_clusters == i,])])/sum(!xenia@meta.data$seurat_clusters == i)
   temp <- data.frame(gene=rownames(marker_exp),spcificity_within_cluster=spcificity_within_cluster,spcificity_outside_cluster=spcificity_outside_cluster)
   sub_cluster <- left_join(sub_cluster, temp)
   temp_list[[i]]<-sub_cluster
